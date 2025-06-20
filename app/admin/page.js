@@ -5,16 +5,16 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { 
-  Download, 
-  RefreshCw, 
-  Baby, 
-  Heart, 
-  Sparkles, 
-  Shield, 
-  Eye, 
+import {
+  Download,
+  RefreshCw,
+  Baby,
+  Heart,
+  Sparkles,
+  Shield,
+  Eye,
   EyeOff,
-  ArrowLeft 
+  ArrowLeft,
 } from "lucide-react";
 import {
   BarChart,
@@ -173,15 +173,36 @@ function LoginForm({ onLogin }) {
     setIsLoading(true);
     setError("");
 
-    // Simulate authentication - In production, this would be a real API call
-    await new Promise((resolve) => setTimeout(resolve, 1000));
+    try {
+      const response = await fetch(
+        "https://baby-diet-flask-backend.onrender.com/api/auth/login",
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            username: credentials.username,
+            password: credentials.password,
+          }),
+        },
+      );
 
-    if (credentials.username === "admin" && credentials.password === "baby123") {
-      onLogin();
-    } else {
-      setError("Invalid username or password");
+      const result = await response.json();
+
+      if (result.success) {
+        // Store the token in localStorage
+        localStorage.setItem("admin_token", result.token);
+        localStorage.setItem("admin_user", JSON.stringify(result.user));
+        onLogin(result.token, result.user);
+      } else {
+        setError(result.error || "Invalid username or password");
+      }
+    } catch (error) {
+      console.error("Login error:", error);
+      setError("Connection error. Please try again.");
     }
-    
+
     setIsLoading(false);
   };
 
@@ -223,7 +244,10 @@ function LoginForm({ onLogin }) {
 
               <div className="space-y-6">
                 <div>
-                  <Label htmlFor="username" className="text-gray-700 font-medium">
+                  <Label
+                    htmlFor="username"
+                    className="text-gray-700 font-medium"
+                  >
                     Username
                   </Label>
                   <Input
@@ -245,7 +269,10 @@ function LoginForm({ onLogin }) {
                 </div>
 
                 <div>
-                  <Label htmlFor="password" className="text-gray-700 font-medium">
+                  <Label
+                    htmlFor="password"
+                    className="text-gray-700 font-medium"
+                  >
                     Password
                   </Label>
                   <div className="relative">
@@ -301,10 +328,16 @@ function LoginForm({ onLogin }) {
               <div className="mt-6 text-center">
                 <p className="text-sm text-gray-600 mb-2">Demo Credentials:</p>
                 <p className="text-xs text-gray-500">
-                  Username: <span className="font-mono bg-gray-100 px-1 rounded">admin</span>
+                  Username:{" "}
+                  <span className="font-mono bg-gray-100 px-1 rounded">
+                    admin
+                  </span>
                 </p>
                 <p className="text-xs text-gray-500">
-                  Password: <span className="font-mono bg-gray-100 px-1 rounded">baby123</span>
+                  Password:{" "}
+                  <span className="font-mono bg-gray-100 px-1 rounded">
+                    baby123
+                  </span>
                 </p>
               </div>
 
@@ -313,7 +346,7 @@ function LoginForm({ onLogin }) {
                   type="button"
                   variant="ghost"
                   size="sm"
-                  onClick={() => window.location.href = '/'}
+                  onClick={() => (window.location.href = "/")}
                   className="text-gray-500 hover:text-gray-700"
                 >
                   <ArrowLeft className="mr-2 h-4 w-4" />
@@ -334,12 +367,13 @@ export default function AdminDashboard() {
   const [searchTerm, setSearchTerm] = useState("");
   const [ageFilter, setAgeFilter] = useState("all");
   const [loading, setLoading] = useState(false);
+  const [adminUser, setAdminUser] = useState(null);
 
   // Get count of babies in each age group for the chart
   const getAgeGroupCounts = () => {
     const counts = ageGroups.map((group) => {
       const count = userData.filter(
-        (user) => user.babyAge >= group.min && user.babyAge <= group.max
+        (user) => user.babyAge >= group.min && user.babyAge <= group.max,
       ).length;
       return { group: group.label, count };
     });
@@ -364,19 +398,67 @@ export default function AdminDashboard() {
     return matchesSearch && matchesAge;
   });
 
-  // Simulate refreshing data from an API
-  const refreshData = () => {
+  // Fetch data from API
+  const fetchData = async () => {
     setLoading(true);
-    setTimeout(() => {
-      const refreshedData = mockUserData.map((user) => ({
-        ...user,
-        babyWeight: parseFloat((user.babyWeight + Math.random() * 0.2 - 0.1).toFixed(1)),
-        weightForAge: parseFloat((user.weightForAge + Math.random() * 0.4 - 0.2).toFixed(1)),
-      }));
-      setUserData(refreshedData);
-      setLoading(false);
-    }, 1000);
+    try {
+      const token = localStorage.getItem("admin_token");
+      const response = await fetch(
+        "https://baby-diet-flask-backend.onrender.com/api/auth/admin-stats",
+        {
+          headers: {
+            Authorization: `Bearer ${token}`,
+            "Content-Type": "application/json",
+          },
+        },
+      );
+
+      if (response.ok) {
+        const result = await response.json();
+        console.log("Admin stats:", result);
+        // Use mock data for now since we're using CSV-based system
+        setUserData(mockUserData);
+      } else {
+        console.error("Error fetching admin data");
+        // Use mock data as fallback
+        setUserData(mockUserData);
+      }
+    } catch (error) {
+      console.error("Network error:", error);
+      // Use mock data as fallback
+      setUserData(mockUserData);
+    }
+    setLoading(false);
   };
+
+  const refreshData = () => {
+    fetchData();
+  };
+
+  // Check authentication on component mount
+  useEffect(() => {
+    const token = localStorage.getItem("admin_token");
+    const user = localStorage.getItem("admin_user");
+
+    if (token && user) {
+      try {
+        setAdminUser(JSON.parse(user));
+        setIsAuthenticated(true);
+        fetchData();
+      } catch (error) {
+        console.error("Error parsing stored user data:", error);
+        localStorage.removeItem("admin_token");
+        localStorage.removeItem("admin_user");
+      }
+    }
+  }, []);
+
+  // Load data when authenticated
+  useEffect(() => {
+    if (isAuthenticated) {
+      fetchData();
+    }
+  }, [isAuthenticated]);
 
   // Export data as CSV
   const exportToCSV = () => {
@@ -405,7 +487,7 @@ export default function AdminDashboard() {
         user.heightForAge,
         user.weightForHeight,
         `"${user.recommendations.join("; ")}"`,
-      ].join(",")
+      ].join(","),
     );
 
     const csv = [headers, ...rows].join("\n");
@@ -445,13 +527,16 @@ export default function AdminDashboard() {
   // Enhanced visualization components
   const AgeDistributionChart = () => {
     const data = getAgeGroupCounts();
-    
+
     return (
       <ResponsiveContainer width="100%" height={300}>
-        <BarChart data={data} margin={{ top: 20, right: 30, left: 20, bottom: 60 }}>
+        <BarChart
+          data={data}
+          margin={{ top: 20, right: 30, left: 20, bottom: 60 }}
+        >
           <CartesianGrid strokeDasharray="3 3" stroke="#f3f4f6" />
-          <XAxis 
-            dataKey="group" 
+          <XAxis
+            dataKey="group"
             angle={-45}
             textAnchor="end"
             height={80}
@@ -459,12 +544,12 @@ export default function AdminDashboard() {
             stroke="#6b7280"
           />
           <YAxis stroke="#6b7280" />
-          <Tooltip 
+          <Tooltip
             contentStyle={{
-              backgroundColor: '#ffffff',
-              border: '1px solid #f3f4f6',
-              borderRadius: '8px',
-              boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1)',
+              backgroundColor: "#ffffff",
+              border: "1px solid #f3f4f6",
+              borderRadius: "8px",
+              boxShadow: "0 4px 6px -1px rgba(0, 0, 0, 0.1)",
             }}
           />
           <Bar dataKey="count" fill="#ec4899" radius={[4, 4, 0, 0]} />
@@ -475,8 +560,10 @@ export default function AdminDashboard() {
 
   const GenderDistributionChart = () => {
     const maleCount = userData.filter((user) => user.babySex === "male").length;
-    const femaleCount = userData.filter((user) => user.babySex === "female").length;
-    
+    const femaleCount = userData.filter(
+      (user) => user.babySex === "female",
+    ).length;
+
     const data = [
       { name: "Male", value: maleCount, color: "#fb7185" },
       { name: "Female", value: femaleCount, color: "#ec4899" },
@@ -490,7 +577,9 @@ export default function AdminDashboard() {
             cx="50%"
             cy="50%"
             labelLine={false}
-            label={({ name, percent }) => `${name} ${(percent * 100).toFixed(0)}%`}
+            label={({ name, percent }) =>
+              `${name} ${(percent * 100).toFixed(0)}%`
+            }
             outerRadius={80}
             fill="#8884d8"
             dataKey="value"
@@ -506,34 +595,39 @@ export default function AdminDashboard() {
   };
 
   const WeightTrendChart = () => {
-    const sortedData = [...userData].sort((a, b) => new Date(a.date) - new Date(b.date));
-    
+    const sortedData = [...userData].sort(
+      (a, b) => new Date(a.date) - new Date(b.date),
+    );
+
     return (
       <ResponsiveContainer width="100%" height={300}>
-        <LineChart data={sortedData} margin={{ top: 20, right: 30, left: 20, bottom: 5 }}>
+        <LineChart
+          data={sortedData}
+          margin={{ top: 20, right: 30, left: 20, bottom: 5 }}
+        >
           <CartesianGrid strokeDasharray="3 3" stroke="#f3f4f6" />
-          <XAxis 
-            dataKey="date" 
+          <XAxis
+            dataKey="date"
             fontSize={12}
             tickFormatter={(value) => new Date(value).toLocaleDateString()}
             stroke="#6b7280"
           />
           <YAxis stroke="#6b7280" />
-          <Tooltip 
+          <Tooltip
             labelFormatter={(value) => new Date(value).toLocaleDateString()}
             formatter={(value, name) => [value + " kg", "Weight"]}
             contentStyle={{
-              backgroundColor: '#ffffff',
-              border: '1px solid #f3f4f6',
-              borderRadius: '8px',
-              boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1)',
+              backgroundColor: "#ffffff",
+              border: "1px solid #f3f4f6",
+              borderRadius: "8px",
+              boxShadow: "0 4px 6px -1px rgba(0, 0, 0, 0.1)",
             }}
           />
           <Legend />
-          <Line 
-            type="monotone" 
-            dataKey="babyWeight" 
-            stroke="#f97316" 
+          <Line
+            type="monotone"
+            dataKey="babyWeight"
+            stroke="#f97316"
             strokeWidth={2}
             dot={{ fill: "#f97316", r: 4 }}
             name="Weight (kg)"
@@ -544,13 +638,39 @@ export default function AdminDashboard() {
   };
 
   // Handle logout
-  const handleLogout = () => {
+  const handleLogout = async () => {
+    try {
+      const token = localStorage.getItem("admin_token");
+      await fetch(
+        "https://baby-diet-flask-backend.onrender.com/api/auth/logout",
+        {
+          method: "POST",
+          headers: {
+            Authorization: `Bearer ${token}`,
+            "Content-Type": "application/json",
+          },
+        },
+      );
+    } catch (error) {
+      console.error("Logout error:", error);
+    }
+
+    // Clear local storage
+    localStorage.removeItem("admin_token");
+    localStorage.removeItem("admin_user");
     setIsAuthenticated(false);
+    setAdminUser(null);
+  };
+
+  // Handle login success
+  const handleLogin = (token, user) => {
+    setIsAuthenticated(true);
+    setAdminUser(user);
   };
 
   // Show login form if not authenticated
   if (!isAuthenticated) {
-    return <LoginForm onLogin={() => setIsAuthenticated(true)} />;
+    return <LoginForm onLogin={handleLogin} />;
   }
 
   return (
@@ -562,22 +682,29 @@ export default function AdminDashboard() {
             <Button
               variant="ghost"
               size="sm"
-              onClick={() => window.location.href = '/'}
+              onClick={() => (window.location.href = "/")}
               className="text-gray-500 hover:text-gray-700"
             >
               <ArrowLeft className="mr-2 h-4 w-4" />
               Back to App
             </Button>
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={handleLogout}
-              className="text-gray-500 hover:text-gray-700 border-gray-300"
-            >
-              Logout
-            </Button>
+            <div className="flex items-center gap-3">
+              {adminUser && (
+                <span className="text-sm text-gray-600">
+                  Welcome, {adminUser.username}
+                </span>
+              )}
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={handleLogout}
+                className="text-gray-500 hover:text-gray-700 border-gray-300"
+              >
+                Logout
+              </Button>
+            </div>
           </div>
-          
+
           <div className="flex justify-center mb-4">
             <div className="relative">
               <Baby className="h-16 w-16 text-pink-500" />
@@ -602,8 +729,12 @@ export default function AdminDashboard() {
               </CardTitle>
             </CardHeader>
             <CardContent>
-              <div className="text-3xl font-bold text-gray-800">{userData.length}</div>
-              <div className="text-gray-500 text-sm mt-1">Active submissions</div>
+              <div className="text-3xl font-bold text-gray-800">
+                {userData.length}
+              </div>
+              <div className="text-gray-500 text-sm mt-1">
+                Active submissions
+              </div>
             </CardContent>
           </Card>
 
@@ -621,7 +752,9 @@ export default function AdminDashboard() {
                   userData.length
                 ).toFixed(1)}
               </div>
-              <div className="text-gray-500 text-sm mt-1">Average age range</div>
+              <div className="text-gray-500 text-sm mt-1">
+                Average age range
+              </div>
             </CardContent>
           </Card>
 
@@ -652,11 +785,12 @@ export default function AdminDashboard() {
             </CardHeader>
             <CardContent>
               <div className="text-3xl font-bold text-gray-800">
-                {userData.filter((user) => user.babySex === "male").length}
-                :
+                {userData.filter((user) => user.babySex === "male").length}:
                 {userData.filter((user) => user.babySex === "female").length}
               </div>
-              <div className="text-gray-500 text-sm mt-1">Gender distribution</div>
+              <div className="text-gray-500 text-sm mt-1">
+                Gender distribution
+              </div>
             </CardContent>
           </Card>
         </div>
@@ -748,14 +882,17 @@ export default function AdminDashboard() {
                 />
               </div>
               <div className="sm:w-1/4">
-                <Label htmlFor="ageFilter" className="text-gray-700 font-medium">
+                <Label
+                  htmlFor="ageFilter"
+                  className="text-gray-700 font-medium"
+                >
                   Age Filter
                 </Label>
-                <Select
-                  value={ageFilter}
-                  onValueChange={setAgeFilter}
-                >
-                  <SelectTrigger id="ageFilter" className="w-full mt-1 border-pink-200 focus:border-pink-400">
+                <Select value={ageFilter} onValueChange={setAgeFilter}>
+                  <SelectTrigger
+                    id="ageFilter"
+                    className="w-full mt-1 border-pink-200 focus:border-pink-400"
+                  >
                     <SelectValue placeholder="Filter by age" />
                   </SelectTrigger>
                   <SelectContent>
@@ -773,18 +910,36 @@ export default function AdminDashboard() {
               <Table>
                 <TableHeader>
                   <TableRow className="bg-gradient-to-r from-pink-50 to-rose-50">
-                    <TableHead className="font-semibold text-gray-700">ID</TableHead>
-                    <TableHead className="font-semibold text-gray-700">Date</TableHead>
-                    <TableHead className="font-semibold text-gray-700">Age (months)</TableHead>
-                    <TableHead className="font-semibold text-gray-700">Weight (kg)</TableHead>
-                    <TableHead className="font-semibold text-gray-700">Height (cm)</TableHead>
-                    <TableHead className="font-semibold text-gray-700">Sex</TableHead>
-                    <TableHead className="font-semibold text-gray-700">Weight for Age</TableHead>
-                    <TableHead className="font-semibold text-gray-700">Height for Age</TableHead>
+                    <TableHead className="font-semibold text-gray-700">
+                      ID
+                    </TableHead>
+                    <TableHead className="font-semibold text-gray-700">
+                      Date
+                    </TableHead>
+                    <TableHead className="font-semibold text-gray-700">
+                      Age (months)
+                    </TableHead>
+                    <TableHead className="font-semibold text-gray-700">
+                      Weight (kg)
+                    </TableHead>
+                    <TableHead className="font-semibold text-gray-700">
+                      Height (cm)
+                    </TableHead>
+                    <TableHead className="font-semibold text-gray-700">
+                      Sex
+                    </TableHead>
+                    <TableHead className="font-semibold text-gray-700">
+                      Weight for Age
+                    </TableHead>
+                    <TableHead className="font-semibold text-gray-700">
+                      Height for Age
+                    </TableHead>
                     <TableHead className="font-semibold text-gray-700">
                       Weight for Height
                     </TableHead>
-                    <TableHead className="font-semibold text-gray-700">Recommendations</TableHead>
+                    <TableHead className="font-semibold text-gray-700">
+                      Recommendations
+                    </TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -802,27 +957,35 @@ export default function AdminDashboard() {
                         <TableCell>{user.babyAge}</TableCell>
                         <TableCell>{user.babyWeight}</TableCell>
                         <TableCell>{user.babyHeight}</TableCell>
-                        <TableCell className="capitalize">{user.babySex}</TableCell>
-                        <TableCell>{renderGrowthBadge(user.weightForAge)}</TableCell>
-                        <TableCell>{renderGrowthBadge(user.heightForAge)}</TableCell>
+                        <TableCell className="capitalize">
+                          {user.babySex}
+                        </TableCell>
+                        <TableCell>
+                          {renderGrowthBadge(user.weightForAge)}
+                        </TableCell>
+                        <TableCell>
+                          {renderGrowthBadge(user.heightForAge)}
+                        </TableCell>
                         <TableCell>
                           {renderGrowthBadge(user.weightForHeight)}
                         </TableCell>
                         <TableCell>
                           <div className="flex flex-wrap gap-1">
-                            {user.recommendations.slice(0, 2).map((rec, i) => (
-                              <span
-                                key={i}
-                                className="text-xs bg-pink-100 text-pink-800 px-1.5 py-0.5 rounded"
-                              >
-                                {rec}
-                              </span>
-                            ))}
-                            {user.recommendations.length > 2 && (
-                              <span className="text-xs text-gray-500">
-                                +{user.recommendations.length - 2}
-                              </span>
-                            )}
+                            {user.recommendations &&
+                              user.recommendations.slice(0, 2).map((rec, i) => (
+                                <span
+                                  key={i}
+                                  className="text-xs bg-pink-100 text-pink-800 px-1.5 py-0.5 rounded"
+                                >
+                                  {rec}
+                                </span>
+                              ))}
+                            {user.recommendations &&
+                              user.recommendations.length > 2 && (
+                                <span className="text-xs text-gray-500">
+                                  +{user.recommendations.length - 2}
+                                </span>
+                              )}
                           </div>
                         </TableCell>
                       </TableRow>
